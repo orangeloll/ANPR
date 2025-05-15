@@ -1,4 +1,6 @@
-import numpy as np, pytesseract, cv2
+import numpy as np
+import pytesseract
+import cv2
 import re
 
 #Tesseract 경로 지정
@@ -14,18 +16,29 @@ def classify_plate(text):
     num = int(num)
 
     # 차량 종류
-    if 100 <= num <= 699:
-        car_type = "승용차"
-    elif 700 <= num <= 799:
-        car_type = "승합차"
-    elif 800 <= num <= 979:
-        car_type = "화물차"
-    elif 980 <= num <= 997:
-        car_type = "특수차"
-    elif 998 <= num <= 999:
-        car_type = "긴급차"
+    if 1 <= num <= 99:
+        if num <= 69:
+            car_type = "승용차"
+        elif num <= 79:
+            car_type = "승합차"
+        elif num <= 97:
+            car_type = "화물차"
+        else:
+            car_type = "특수차"
+    elif 100 <= num <= 999:
+        if num <= 699:
+            car_type = "승용차"
+        elif num <= 799:
+            car_type = "승합차"
+        elif num <= 979:
+            car_type = "화물차"
+        elif num <= 997:
+            car_type = "특수차"
+        else:
+            car_type = "긴급차"
     else:
-        car_type = "승용차"
+        car_type = "잘못된 범위입니다"  # 기본값 (범위 외일 때)
+
 
     # 용도
     if letter in ['허', '하', '호']:
@@ -38,14 +51,17 @@ def classify_plate(text):
         usage = "자가용"
 
     return car_type, usage, serial
-img_ori = cv2.imread("images/car10.jpg")
+
+img_ori = cv2.imread("images/01.jpg")
+
+if img_ori is None:
+    raise Exception("이미지가 존재하지 않습니다.")
 
 height, width, channel = img_ori.shape
 
 gray = cv2.cvtColor(img_ori, cv2.COLOR_BGR2GRAY)
 
 img_blurred = cv2.GaussianBlur(gray, ksize=(5, 5), sigmaX=0)
-
 img_thresh = cv2.adaptiveThreshold(
     img_blurred,
     maxValue=255.0,
@@ -80,8 +96,6 @@ for contour in contours:
     })
 cv2.drawContours(temp_result, contours=contours, contourIdx=-1, color=(255, 255, 255))
 
-
-
 MIN_AREA = 80
 MIN_WIDTH, MIN_HEIGHT = 2, 8
 MIN_RATIO, MAX_RATIO = 0.25, 1.0
@@ -99,18 +113,18 @@ for d in contours_dict:
         d['idx'] = cnt
         cnt += 1
         possible_contours.append(d)
-vis = img_ori.copy()
+##vis = img_ori.copy()
 temp_result = np.zeros((height, width, channel), dtype=np.uint8)
 for d in possible_contours:
-#     cv2.drawContours(temp_result, d['contour'], -1, (255, 255, 255))
+    ##cv2.drawContours(temp_result, d['contour'], -1, (255, 255, 255))
     cv2.rectangle(temp_result, pt1=(d['x'], d['y']), pt2=(d['x']+d['w'], d['y']+d['h']), color=(255, 255, 255), thickness=2)
-    
+
 MAX_DIAG_MULTIPLYER = 5 ##첫번째 컨투어와 다음 사이의 대각선 5배 안에 있어야함
 MAX_ANGLE_DIFF = 12.0 ##중심을 이었을때 벌어진 정도
 MAX_AREA_DIFF = 0.5 ##면적 차이
 MAX_WIDTH_DIFF = 0.8 ##너비차이
 MAX_HEIGHT_DIFF = 0.2 ##높이
-MIN_N_MATCHED = 3 ## 위 조건들을 만족하는 애들이 3개 미만이면 후보가 아님
+MIN_N_MATCHED = 6 ## 위 조건들을 만족하는 애들이 이 개수 미만이면 후보가 아님
 
 def find_chars(contour_list): ##나중에 재귀함수로 계속 찾기때문에 지정
     matched_result_idx = []
@@ -144,7 +158,7 @@ def find_chars(contour_list): ##나중에 재귀함수로 계속 찾기때문에
                 matched_contours_idx.append(d2['idx'])
         matched_contours_idx.append(d1['idx'])
 
-        if len(matched_contours_idx) < MIN_N_MATCHED: ##컨투어가 3개보다 작아! 그럼 번호판일 수가.. 한국 번호판은 3자리넘으니까
+        if len(matched_contours_idx) < MIN_N_MATCHED: ##컨투어가 6개보다 작으면 번호판일 수가 X 한국 번호판은 6자리가 넘기때문에
             continue
 
         matched_result_idx.append(matched_contours_idx)
@@ -173,16 +187,16 @@ matched_result = []
 for idx_list in result_idx:
     matched_result.append(np.take(possible_contours, idx_list))
 
-# visualize possible contours
+
 temp_result = np.zeros((height, width, channel), dtype=np.uint8)
-vis = img_ori.copy()
+##vis = img_ori.copy()
 for r in matched_result:
     for d in r:
 #         cv2.drawContours(temp_result, d['contour'], -1, (255, 255, 255))
         cv2.rectangle(temp_result, pt1=(d['x'], d['y']), pt2=(d['x']+d['w'], d['y']+d['h']), color=(255, 255, 255), thickness=2)
-        cv2.rectangle(vis, pt1=(d['x'], d['y']), pt2=(d['x']+d['w'], d['y']+d['h']), color=(255, 255, 0), thickness=2)
-        
-cv2.imshow("vis", vis)
+        ##cv2.rectangle(vis, pt1=(d['x'], d['y']), pt2=(d['x']+d['w'], d['y']+d['h']), color=(255, 255, 0), thickness=2)
+
+##cv2.imshow("img1",vis)
 
 PLATE_WIDTH_PADDING = 1.3 # 1.3에서 수정해보기
 PLATE_HEIGHT_PADDING = 1.5 # 1.5
@@ -224,8 +238,10 @@ for i, matched_chars in enumerate(matched_result):
         center=(int(plate_cx), int(plate_cy))
     )
     
-    if img_cropped.shape[1] / img_cropped.shape[0] < MIN_PLATE_RATIO or img_cropped.shape[1] / img_cropped.shape[0] < MIN_PLATE_RATIO > MAX_PLATE_RATIO:
+    plate_ratio = img_cropped.shape[1] / img_cropped.shape[0]
+    if plate_ratio < MIN_PLATE_RATIO or plate_ratio > MAX_PLATE_RATIO:
         continue
+
     
     plate_imgs.append(img_cropped)
     plate_infos.append({
@@ -237,11 +253,11 @@ for i, matched_chars in enumerate(matched_result):
 longest_idx, longest_text = -1, 0
 plate_chars = []
 
+
 for i, plate_img in enumerate(plate_imgs):
     plate_img = cv2.resize(plate_img, dsize=(0, 0), fx=1.6, fy=1.6)
     _, plate_img = cv2.threshold(plate_img, thresh=0.0, maxval=255.0, type=cv2.THRESH_BINARY | cv2.THRESH_OTSU)
     
-    # find contours again (same as above)
     contours, _ = cv2.findContours(plate_img, mode=cv2.RETR_LIST, method=cv2.CHAIN_APPROX_SIMPLE)
     
     plate_min_x, plate_min_y = plate_img.shape[1], plate_img.shape[0]
@@ -268,10 +284,14 @@ for i, plate_img in enumerate(plate_imgs):
     img_result = plate_img[plate_min_y:plate_max_y, plate_min_x:plate_max_x]
     
     img_result = cv2.GaussianBlur(img_result, ksize=(3, 3), sigmaX=0)
+    # 윤곽선 강화
+    ##kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+    ##img_result = cv2.dilate(img_result, kernel, iterations=1)
+
     _, img_result = cv2.threshold(img_result, thresh=0.0, maxval=255.0, type=cv2.THRESH_BINARY | cv2.THRESH_OTSU)
     img_result = cv2.copyMakeBorder(img_result, top=10, bottom=10, left=10, right=10, borderType=cv2.BORDER_CONSTANT, value=(0,0,0))
 
-    chars = pytesseract.image_to_string(img_result, lang='kor', config='--psm 8 --oem 1')
+    chars = pytesseract.image_to_string(img_result, lang='kor', config='--psm 7 --oem 1') ##psm와 oem 값에 따라 특정 사진의 인식 정확도가 달라지기도 함
     result_chars = ''
     has_digit = False
     for c in chars:
@@ -279,9 +299,26 @@ for i, plate_img in enumerate(plate_imgs):
             if c.isdigit():
                 has_digit = True
             result_chars += c
-    
-    print("번호판:",result_chars)
+
+    # 첫 글자가 숫자가 아니면 제거
+    if result_chars and not result_chars[0].isdigit():
+        result_chars = result_chars[1:]
+
+    match = re.match(r'^(\d{2,3})[가-힣]', result_chars)
+
+    if match:
+        num_part = match.group(1)
+        if len(num_part) == 2 and len(result_chars) > 7: ## 앞자리가 2자리일때 총 길이가 8이상이면 뒤를 자름
+            result_chars = result_chars[:7]
+        elif len(num_part) == 3 and len(result_chars) > 8: ## 앞자리가 3자리일때 총 길이가 9이상이면 뒤를 자름
+            result_chars = result_chars[:8]
+    else:
+        print(f"❌ 번호판 형식 인식 실패: {result_chars}")
+        continue  # 이 루프(i) 건너뜀
+
+    print("번호판:", result_chars)
     car_type, usage, serial = classify_plate(result_chars)
+
     print(f"▶ 차량 종류: {car_type}, 용도: {usage}, 등록번호: {serial}")
     plate_chars.append(result_chars)
 
