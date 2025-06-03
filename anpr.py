@@ -2,10 +2,13 @@ import numpy as np
 import pytesseract
 import cv2
 import re
+import tkinter as tk
+from tkinter import filedialog
+import os # os 모듈 추가
+from PIL import ImageFont, ImageDraw, Image # Pillow 라이브러리 임포트
 
-#Tesseract 경로 지정
+# Tesseract 경로 지정 (기존과 동일)
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-
 
 def classify_plate(text):
     match = re.match(r'(\d{2,3})([가-힣])(\d{4})', text)
@@ -37,8 +40,7 @@ def classify_plate(text):
         else:
             car_type = "긴급차"
     else:
-        car_type = "잘못된 범위입니다"  # 기본값 (범위 외일 때)
-
+        car_type = "잘못된 범위입니다" # 기본값 (범위 외일 때)
 
     # 용도
     if letter in ['허', '하', '호']:
@@ -52,11 +54,37 @@ def classify_plate(text):
 
     return car_type, usage, serial
 
-img_ori = cv2.imread("images/01.jpg")
+
+# --- 파일 선택 및 이미지 로드 부분 수정 ---
+root = tk.Tk()
+root.withdraw() # Tkinter 창(빨간 네모 부분 창)을 숨김
+
+file_path = filedialog.askopenfilename(
+    title="이미지 파일 선택",
+    filetypes=[("Image files", "*.jpg *.jpeg *.png *.bmp")]
+)
+
+if not file_path:
+    print("이미지 파일을 선택하지 않았습니다. 프로그램을 종료합니다.")
+    exit()
+
+# cv2.imread() 대신 cv2.imdecode() 사용 -> imread 함수가 한글이나 특정 특수 문자를 인식하지 못해서 변경
+# 파일을 바이너리 모드로 읽어 numpy 배열로 변환 후 디코딩
+try:
+    with open(file_path, 'rb') as f:
+        # 파일 내용을 바이트 스트림으로 읽어들입니다.
+        img_bytes = np.frombuffer(f.read(), np.uint8)
+    # imdecode를 사용하여 이미지 데이터를 디코딩합니다.
+    img_ori = cv2.imdecode(img_bytes, cv2.IMREAD_COLOR)
+except Exception as e:
+    raise Exception(f"이미지 파일을 읽거나 디코딩하는 중 오류가 발생했습니다: {e}")
+
 
 if img_ori is None:
-    raise Exception("이미지가 존재하지 않습니다.")
+    # imdecode가 None을 반환하는 경우는 보통 파일이 유효한 이미지 형식이 아니거나 손상된 경우
+    raise Exception("선택한 이미지를 로드할 수 없습니다. 파일이 유효한 이미지 파일인지 확인해주세요.")
 
+#
 height, width, channel = img_ori.shape
 
 gray = cv2.cvtColor(img_ori, cv2.COLOR_BGR2GRAY)
@@ -68,16 +96,15 @@ img_thresh = cv2.adaptiveThreshold(
     adaptiveMethod = cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
     thresholdType=cv2.THRESH_BINARY_INV,
     blockSize=19,
-    C=9
+    C=11
 )
-
 contours, _ = cv2.findContours(
     img_thresh,
     mode=cv2.RETR_LIST,
     method=cv2.CHAIN_APPROX_SIMPLE
 )
 
-temp_result = np.zeros((height, width, channel), dtype=np.uint8) ##contour 확인
+temp_result = np.zeros((height, width, channel), dtype=np.uint8)
 
 contours_dict = []
 
@@ -172,14 +199,14 @@ def find_chars(contour_list): ##나중에 재귀함수로 계속 찾기때문에
 
         # recursive
         recursive_contour_list = find_chars(unmatched_contour)
-        
+
         for idx in recursive_contour_list:
             matched_result_idx.append(idx)
 
         break
 
     return matched_result_idx
-    
+
 result_idx = find_chars(possible_contours)
 
 
@@ -192,7 +219,7 @@ temp_result = np.zeros((height, width, channel), dtype=np.uint8)
 ##vis = img_ori.copy()
 for r in matched_result:
     for d in r:
-#         cv2.drawContours(temp_result, d['contour'], -1, (255, 255, 255))
+#       cv2.drawContours(temp_result, d['contour'], -1, (255, 255, 255))
         cv2.rectangle(temp_result, pt1=(d['x'], d['y']), pt2=(d['x']+d['w'], d['y']+d['h']), color=(255, 255, 255), thickness=2)
         ##cv2.rectangle(vis, pt1=(d['x'], d['y']), pt2=(d['x']+d['w'], d['y']+d['h']), color=(255, 255, 0), thickness=2)
 
@@ -211,38 +238,38 @@ for i, matched_chars in enumerate(matched_result):
 
     plate_cx = (sorted_chars[0]['cx'] + sorted_chars[-1]['cx']) / 2
     plate_cy = (sorted_chars[0]['cy'] + sorted_chars[-1]['cy']) / 2
-    
+
     plate_width = (sorted_chars[-1]['x'] + sorted_chars[-1]['w'] - sorted_chars[0]['x']) * PLATE_WIDTH_PADDING
-    
+
     sum_height = 0
     for d in sorted_chars:
         sum_height += d['h']
 
     plate_height = int(sum_height / len(sorted_chars) * PLATE_HEIGHT_PADDING)
-    
+
     triangle_height = sorted_chars[-1]['cy'] - sorted_chars[0]['cy']
     triangle_hypotenus = np.linalg.norm(
-        np.array([sorted_chars[0]['cx'], sorted_chars[0]['cy']]) - 
+        np.array([sorted_chars[0]['cx'], sorted_chars[0]['cy']]) -
         np.array([sorted_chars[-1]['cx'], sorted_chars[-1]['cy']])
     )
-    
+
     angle = np.degrees(np.arcsin(triangle_height / triangle_hypotenus))
-    
+
     rotation_matrix = cv2.getRotationMatrix2D(center=(plate_cx, plate_cy), angle=angle, scale=1.0)
-    
+
     img_rotated = cv2.warpAffine(img_thresh, M=rotation_matrix, dsize=(width, height))
-    
+
     img_cropped = cv2.getRectSubPix(
-        img_rotated, 
-        patchSize=(int(plate_width), int(plate_height)), 
+        img_rotated,
+        patchSize=(int(plate_width), int(plate_height)),
         center=(int(plate_cx), int(plate_cy))
     )
-    
+
     plate_ratio = img_cropped.shape[1] / img_cropped.shape[0]
     if plate_ratio < MIN_PLATE_RATIO or plate_ratio > MAX_PLATE_RATIO:
         continue
 
-    
+
     plate_imgs.append(img_cropped)
     plate_infos.append({
         'x': int(plate_cx - plate_width / 2),
@@ -257,15 +284,15 @@ plate_chars = []
 for i, plate_img in enumerate(plate_imgs):
     plate_img = cv2.resize(plate_img, dsize=(0, 0), fx=1.6, fy=1.6)
     _, plate_img = cv2.threshold(plate_img, thresh=0.0, maxval=255.0, type=cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-    
+
     contours, _ = cv2.findContours(plate_img, mode=cv2.RETR_LIST, method=cv2.CHAIN_APPROX_SIMPLE)
-    
+
     plate_min_x, plate_min_y = plate_img.shape[1], plate_img.shape[0]
     plate_max_x, plate_max_y = 0, 0
 
     for contour in contours:
         x, y, w, h = cv2.boundingRect(contour)
-        
+
         area = w * h
         ratio = w / h
 
@@ -280,13 +307,13 @@ for i, plate_img in enumerate(plate_imgs):
                 plate_max_x = x + w
             if y + h > plate_max_y:
                 plate_max_y = y + h
-                
+
     img_result = plate_img[plate_min_y:plate_max_y, plate_min_x:plate_max_x]
-    
+
     img_result = cv2.GaussianBlur(img_result, ksize=(3, 3), sigmaX=0)
     # 윤곽선 강화
-    ##kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-    ##img_result = cv2.dilate(img_result, kernel, iterations=1)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+    img_result = cv2.dilate(img_result, kernel, iterations=1)
 
     _, img_result = cv2.threshold(img_result, thresh=0.0, maxval=255.0, type=cv2.THRESH_BINARY | cv2.THRESH_OTSU)
     img_result = cv2.copyMakeBorder(img_result, top=10, bottom=10, left=10, right=10, borderType=cv2.BORDER_CONSTANT, value=(0,0,0))
@@ -314,7 +341,7 @@ for i, plate_img in enumerate(plate_imgs):
             result_chars = result_chars[:8]
     else:
         print(f"❌ 번호판 형식 인식 실패: {result_chars}")
-        continue  # 이 루프(i) 건너뜀
+        continue # 이 루프(i) 건너뜀
 
     print("번호판:", result_chars)
     car_type, usage, serial = classify_plate(result_chars)
@@ -325,7 +352,58 @@ for i, plate_img in enumerate(plate_imgs):
     if has_digit and len(result_chars) > longest_text:
         longest_idx = i
 
+#cv2.imshow("Detected Plate", img_result) # 인식된 번호판 영역을 보여주는 창
+#cv2.waitKey(0)
+#cv2.destroyAllWindows()
+
+# --- Pillow를 사용하여 한글 텍스트 그리기 ---
+if longest_idx != -1:
+    x_ori, y_ori, w_ori, h_ori = plate_infos[longest_idx]['x'], plate_infos[longest_idx]['y'], plate_infos[longest_idx]['w'], plate_infos[longest_idx]['h']
+
+    # OpenCV 이미지를 Pillow 이미지로 변환 (BGR -> RGB)
+    img_pil = Image.fromarray(cv2.cvtColor(img_ori, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(img_pil)
+
+    # 폰트 로드 (시스템에 설치된 한글 폰트 경로 지정)
+    font_path = "C:/Windows/Fonts/malgunbd.ttf" # 맑은 고딕 볼드
 
 
-cv2.imshow("image", img_result)
+    try:
+        font = ImageFont.truetype(font_path, 25) # 폰트 크기 조정
+    except IOError:
+        print(f"경고: '{font_path}' 폰트를 찾을 수 없습니다. 기본 폰트를 사용합니다. (한글 깨질 수 있음)")
+        font = ImageFont.load_default()
+
+    # 번호판 외곽선 그리기
+    draw.rectangle([(x_ori, y_ori), (x_ori + w_ori, y_ori + h_ori)], outline=(0, 255, 0), width=2)
+
+    # 번호판 텍스트 그리기
+    text_to_display = plate_chars[longest_idx]
+    draw.text((x_ori, y_ori - 35), text_to_display, font=font, fill=(0, 255, 0)) # 텍스트 위치 조정 (y_ori - 35)
+
+    # 차량 정보 텍스트 그리기
+    car_type, usage, serial = classify_plate(text_to_display)
+    
+    # 텍스트 줄 간격 계산 (대략적인 폰트 높이 + 여백)
+    # font.getbbox("가")는 텍스트 바운딩 박스를 반환합니다. (left, top, right, bottom)
+    # bottom - top 으로 대략적인 높이를 구할 수 있음
+    try:
+        line_height = font.getbbox("가")[3] - font.getbbox("가")[1] + 5
+    except AttributeError: # 이전 Pillow 버전에서는 getsize를 사용
+        line_height = font.getsize("가")[1] + 5
+
+
+    info_x = x_ori
+    info_y = y_ori + h_ori + 10 # 번호판 아래 10px 간격
+
+    draw.text((info_x, info_y), f"종류: {car_type}", font=font, fill=(255, 0, 0)) # 종류는 빨간색
+    draw.text((info_x, info_y + line_height), f"용도: {usage}", font=font, fill=(255, 0, 0)) # 용도는 빨간색, 종류 아래 5px 간격
+
+    # Pillow 이미지를 다시 OpenCV 이미지로 변환 (RGB -> BGR)
+    img_ori = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+
+cv2.imshow("Original Image with Detected Plate and Info", img_ori)
+if longest_idx != -1:
+    cv2.imshow("Detected Plate Region for OCR", plate_imgs[longest_idx])
 cv2.waitKey(0)
+cv2.destroyAllWindows()
