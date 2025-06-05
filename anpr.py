@@ -84,8 +84,17 @@ if img_ori is None:
     # imdecode가 None을 반환하는 경우는 보통 파일이 유효한 이미지 형식이 아니거나 손상된 경우
     raise Exception("선택한 이미지를 로드할 수 없습니다. 파일이 유효한 이미지 파일인지 확인해주세요.")
 
-#
+
 height, width, channel = img_ori.shape
+
+
+MAX_DIM = 800 # 최대 가로/세로 800 픽셀로 제한
+if height > MAX_DIM or width > MAX_DIM:
+    print(f"이미지 크기가 너무 큽니다 ({width}x{height}). 리사이즈합니다.")
+    scale = MAX_DIM / max(height, width)
+    img_ori = cv2.resize(img_ori, (int(width * scale), int(height * scale)))
+    height, width, channel = img_ori.shape
+    print(f"새로운 크기: {width}x{height}")
 
 gray = cv2.cvtColor(img_ori, cv2.COLOR_BGR2GRAY)
 
@@ -123,7 +132,7 @@ for contour in contours:
     })
 cv2.drawContours(temp_result, contours=contours, contourIdx=-1, color=(255, 255, 255))
 
-MIN_AREA = 80
+MIN_AREA = 90
 MIN_WIDTH, MIN_HEIGHT = 2, 8
 MIN_RATIO, MAX_RATIO = 0.25, 1.0
 
@@ -169,11 +178,8 @@ def find_chars(contour_list): ##나중에 재귀함수로 계속 찾기때문에
 
             ##벡터 a와 벡터 b 사이의 거리를 구한다 {np.linalg.norm(a-b)}
             distance = np.linalg.norm(np.array([d1['cx'], d1['cy']]) - np.array([d2['cx'], d2['cy']]))
-            ##dx가 0값이면 믐 같은 위치임 그럼 번호판일 확률이 적고 dx가 0이면 arctan dy/dx의 분모가 0이라 나눌 수 없으니 오류나니까 처리해주는 거
-            if dx == 0:
-                angle_diff = 90
-            else:
-                angle_diff = np.degrees(np.arctan2(dy, dx))
+            
+            angle_diff = np.degrees(np.arctan2(dy, dx))
             ## tanθ = dy/dx, θ = arctan dy/dx, np.arctan() > 아크탄젠트 값을 구한다(라디안) > np.degrees() >라디안을 도로 변경한다
             area_diff = abs(d1['w']*d1['h'] - d2['w']*d2['h'])/(d1['w']*d1['h'])
             width_diff = abs(d1['w']-d2['w'])/d1['w']
@@ -225,8 +231,8 @@ for r in matched_result:
 
 ##cv2.imshow("img1",vis)
 
-PLATE_WIDTH_PADDING = 1.3 # 1.3에서 수정해보기
-PLATE_HEIGHT_PADDING = 1.5 # 1.5
+PLATE_WIDTH_PADDING = 1.31 # 1.3에서 수정해보기
+PLATE_HEIGHT_PADDING = 1.51 # 1.5
 MIN_PLATE_RATIO = 3
 MAX_PLATE_RATIO = 10
 
@@ -312,8 +318,8 @@ for i, plate_img in enumerate(plate_imgs):
 
     img_result = cv2.GaussianBlur(img_result, ksize=(3, 3), sigmaX=0)
     # 윤곽선 강화
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-    img_result = cv2.dilate(img_result, kernel, iterations=1)
+    ##kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+    ##img_result = cv2.dilate(img_result, kernel, iterations=1)
 
     _, img_result = cv2.threshold(img_result, thresh=0.0, maxval=255.0, type=cv2.THRESH_BINARY | cv2.THRESH_OTSU)
     img_result = cv2.copyMakeBorder(img_result, top=10, bottom=10, left=10, right=10, borderType=cv2.BORDER_CONSTANT, value=(0,0,0))
@@ -327,11 +333,21 @@ for i, plate_img in enumerate(plate_imgs):
                 has_digit = True
             result_chars += c
 
+    if '파' in result_chars:
+        result_chars = result_chars.replace('파', '마')
+        print(f"DEBUG: '파'를 '마'로 교정했습니다. 교정 후: '{result_chars}'")
+    elif '지' in result_chars:
+        result_chars = result_chars.replace('지', '저')
+    elif '리' in result_chars:
+        result_chars = result_chars.replace('리', '러')
+
     # 첫 글자가 숫자가 아니면 제거
     if result_chars and not result_chars[0].isdigit():
         result_chars = result_chars[1:]
+    
 
     match = re.match(r'^(\d{2,3})[가-힣]', result_chars)
+    
 
     if match:
         num_part = match.group(1)
@@ -339,6 +355,7 @@ for i, plate_img in enumerate(plate_imgs):
             result_chars = result_chars[:7]
         elif len(num_part) == 3 and len(result_chars) > 8: ## 앞자리가 3자리일때 총 길이가 9이상이면 뒤를 자름
             result_chars = result_chars[:8]
+        
     else:
         print(f"❌ 번호판 형식 인식 실패: {result_chars}")
         continue # 이 루프(i) 건너뜀
@@ -352,7 +369,7 @@ for i, plate_img in enumerate(plate_imgs):
     if has_digit and len(result_chars) > longest_text:
         longest_idx = i
 
-#cv2.imshow("Detected Plate", img_result) # 인식된 번호판 영역을 보여주는 창
+#cv2.imshow("번호판 창", img_result) # 인식된 번호판 영역을 보여주는 창
 #cv2.waitKey(0)
 #cv2.destroyAllWindows()
 
@@ -371,7 +388,7 @@ if longest_idx != -1:
     try:
         font = ImageFont.truetype(font_path, 25) # 폰트 크기 조정
     except IOError:
-        print(f"경고: '{font_path}' 폰트를 찾을 수 없습니다. 기본 폰트를 사용합니다. (한글 깨질 수 있음)")
+        print(f"경고: '{font_path}' 폰트를 찾을 수 없습니다. 기본 폰트를 사용합니다.")
         font = ImageFont.load_default()
 
     # 번호판 외곽선 그리기
