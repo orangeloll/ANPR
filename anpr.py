@@ -234,8 +234,8 @@ for r in matched_result:
 
 ##cv2.imshow("img1",vis)
 
-PLATE_WIDTH_PADDING = 1.305 # 1.3에서 수정해보기
-PLATE_HEIGHT_PADDING = 1.51 # 1.5
+PLATE_WIDTH_PADDING = 1.25 # 1.3에서 수정해보기
+PLATE_HEIGHT_PADDING = 1.5 # 1.5
 MIN_PLATE_RATIO = 3
 MAX_PLATE_RATIO = 10
 
