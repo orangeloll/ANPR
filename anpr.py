@@ -87,14 +87,17 @@ if img_ori is None:
 
 height, width, channel = img_ori.shape
 
+MAX_DIM = 850 # 최대 가로/세로 800 픽셀로 제한
 
-MAX_DIM = 800 # 최대 가로/세로 800 픽셀로 제한
 if height > MAX_DIM or width > MAX_DIM:
-    print(f"이미지 크기가 너무 큽니다 ({width}x{height}). 리사이즈합니다.")
-    scale = MAX_DIM / max(height, width)
-    img_ori = cv2.resize(img_ori, (int(width * scale), int(height * scale)))
-    height, width, channel = img_ori.shape
-    print(f"새로운 크기: {width}x{height}")
+ print(f"이미지 크기가 너무 큽니다 ({width}x{height}). 리사이즈합니다.")
+ scale = MAX_DIM / max(height, width)
+
+ img_ori = cv2.resize(img_ori, (int(width * scale), int(height * scale)))
+
+ height, width, channel = img_ori.shape
+
+ print(f"새로운 크기: {width}x{height}")
 
 gray = cv2.cvtColor(img_ori, cv2.COLOR_BGR2GRAY)
 
@@ -104,7 +107,7 @@ img_thresh = cv2.adaptiveThreshold(
     maxValue=255.0,
     adaptiveMethod = cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
     thresholdType=cv2.THRESH_BINARY_INV,
-    blockSize=19,
+    blockSize=21,
     C=11
 )
 contours, _ = cv2.findContours(
@@ -132,7 +135,7 @@ for contour in contours:
     })
 cv2.drawContours(temp_result, contours=contours, contourIdx=-1, color=(255, 255, 255))
 
-MIN_AREA = 90
+MIN_AREA = 80
 MIN_WIDTH, MIN_HEIGHT = 2, 8
 MIN_RATIO, MAX_RATIO = 0.25, 1.0
 
@@ -203,7 +206,7 @@ def find_chars(contour_list): ##나중에 재귀함수로 계속 찾기때문에
         ## np.take(a, idx) > a에서 idx와 같은 인덱스의 값만 추출
         unmatched_contour = np.take(possible_contours, unmatched_contour_idx)
 
-        # recursive
+        # 재귀
         recursive_contour_list = find_chars(unmatched_contour)
 
         for idx in recursive_contour_list:
@@ -231,7 +234,7 @@ for r in matched_result:
 
 ##cv2.imshow("img1",vis)
 
-PLATE_WIDTH_PADDING = 1.31 # 1.3에서 수정해보기
+PLATE_WIDTH_PADDING = 1.305 # 1.3에서 수정해보기
 PLATE_HEIGHT_PADDING = 1.51 # 1.5
 MIN_PLATE_RATIO = 3
 MAX_PLATE_RATIO = 10
@@ -286,7 +289,6 @@ for i, matched_chars in enumerate(matched_result):
 longest_idx, longest_text = -1, 0
 plate_chars = []
 
-
 for i, plate_img in enumerate(plate_imgs):
     plate_img = cv2.resize(plate_img, dsize=(0, 0), fx=1.6, fy=1.6)
     _, plate_img = cv2.threshold(plate_img, thresh=0.0, maxval=255.0, type=cv2.THRESH_BINARY | cv2.THRESH_OTSU)
@@ -333,13 +335,16 @@ for i, plate_img in enumerate(plate_imgs):
                 has_digit = True
             result_chars += c
 
-    if '파' in result_chars:
+    if '파' in result_chars or '따' in result_chars:
         result_chars = result_chars.replace('파', '마')
+        result_chars = result_chars.replace('따', '마')
         print(f"DEBUG: '파'를 '마'로 교정했습니다. 교정 후: '{result_chars}'")
     elif '지' in result_chars:
         result_chars = result_chars.replace('지', '저')
     elif '리' in result_chars:
         result_chars = result_chars.replace('리', '러')
+    elif '기' in result_chars:
+        result_chars = result_chars.replace('기', '가')
 
     # 첫 글자가 숫자가 아니면 제거
     if result_chars and not result_chars[0].isdigit():
